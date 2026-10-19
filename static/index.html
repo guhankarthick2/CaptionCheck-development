@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CaptionCheck</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1c1915;
+      --muted: #5c564c;
+      --line: #d9d1c5;
+      --paper: #f6f3ee;
+      --card: #fffdf9;
+      --accent: #0f5c56;
+      --accent-ink: #ffffff;
+      --mark: #f3e2c4;
+      --danger: #8a3b24;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.45;
+    }
+    header, main { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+    header { padding-bottom: 0; }
+    h1 { font-size: 1.8rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+    h2 { font-size: 1rem; margin: 0 0 10px; }
+    p { margin: 0; }
+    .lede { max-width: 68ch; color: var(--muted); }
+    .limit {
+      margin-top: 14px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      background: var(--card);
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    form, .workspace { margin-top: 18px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+    input[type="file"], input[type="text"], textarea {
+      font: inherit;
+      color: var(--ink);
+      background: var(--card);
+      border: 1px solid var(--line);
+      padding: 8px;
+    }
+    input[type="text"], textarea { width: 100%; }
+    textarea { min-height: 88px; resize: vertical; }
+    button {
+      font: inherit;
+      background: var(--accent);
+      color: var(--accent-ink);
+      border: 0;
+      padding: 9px 14px;
+      cursor: pointer;
+    }
+    button.secondary, a.secondary {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      text-decoration: none;
+      display: inline-block;
+      padding: 9px 14px;
+    }
+    button:disabled { opacity: 0.55; cursor: wait; }
+    .status { min-height: 1.4em; margin-top: 10px; color: var(--danger); }
+    .layout { display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 16px; }
+    video { width: 100%; background: #111; aspect-ratio: 16 / 9; }
+    .panel { background: var(--card); border: 1px solid var(--line); padding: 12px; }
+    .cues { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow: auto; }
+    .cues button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      color: var(--ink);
+      border: 0;
+      border-left: 4px solid transparent;
+      padding: 8px;
+    }
+    .cues button.flagged { background: var(--mark); border-left-color: var(--danger); }
+    .cues button.active { outline: 2px solid var(--accent); }
+    .time { font-variant-numeric: tabular-nums; color: var(--muted); margin-right: 8px; }
+    table { width: 100%; border-collapse: collapse; background: var(--card); }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 0.92rem; }
+    th { font-size: 0.78rem; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); }
+    tr.selected { background: var(--mark); }
+    td button { background: transparent; color: var(--accent); border: 0; padding: 0; text-decoration: underline; }
+    .editor { display: flex; flex-direction: column; gap: 8px; }
+    .evidence { font-size: 0.92rem; }
+    .evidence span { display: block; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .downloads { display: flex; gap: 8px; margin-top: 12px; }
+    .hidden { display: none; }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>CaptionCheck</h1>
+    <p class="lede">CaptionCheck lists the few caption moments in a short English lesson that might change a number, a negation, or a required term, or where speech has no caption, so the creator can listen and export a corrected SRT.</p>
+    <p class="limit" id="limit">If the second transcript hears the same wrong word as the caption, that line will not appear. Every row is a possible issue.</p>
+  </header>
+  <main>
+    <form id="upload">
+      <div class="row">
+        <label>Video (MP4)<input name="video" type="file" accept="video/mp4,.mp4" required></label>
+        <label>Captions (SRT)<input name="srt" type="file" accept=".srt,text/plain" required></label>
+        <label>Glossary, optional<input name="glossary" type="text" placeholder="mitosis, milligram"></label>
+        <button type="submit">Check captions</button>
+        <button type="button" class="secondary" id="demo">Open planted sample</button>
+      </div>
+      <p class="status" id="status" role="status"></p>
+    </form>
+
+    <section id="workspace" class="workspace hidden">
+      <div class="layout">
+        <div class="panel">
+          <h2>Video</h2>
+          <video id="player" controls preload="metadata"></video>
+        </div>
+        <div class="panel">
+          <h2>Captions</h2>
+          <ul class="cues" id="cues"></ul>
+        </div>
+      </div>
+
+      <div class="layout" style="margin-top: 16px;">
+        <div class="panel">
+          <h2>Possible issues</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Possible issue</th>
+                <th>Why it matters</th>
+                <th>Recognizer score</th>
+              </tr>
+            </thead>
+            <tbody id="queue"></tbody>
+          </table>
+          <p id="empty" class="lede hidden">No possible issues in these four categories.</p>
+        </div>
+        <div class="panel editor" id="editor">
+          <h2>Review</h2>
+          <p class="lede" id="editor-empty">Select a row to play it and edit the caption.</p>
+          <div id="editor-body" class="hidden">
+            <p class="evidence"><span>Why it matters</span><span id="why-label"></span></p>
+            <p class="evidence"><span>Caption</span><span id="cap-label"></span></p>
+            <p class="evidence"><span>Audio transcript</span><span id="audio-label"></span></p>
+            <p class="evidence"><span>Recognizer score</span><span id="score-label"></span></p>
+            <p class="lede" id="score-note">This score is how sure the second transcript is of its own words. A high score can still sit on the wrong caption.</p>
+            <label>Working caption<textarea id="caption-edit"></textarea></label>
+            <div class="actions">
+              <button type="button" id="play">Play</button>
+              <button type="button" id="apply">Apply</button>
+              <button type="button" class="secondary" id="dismiss">Dismiss</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="downloads">
+        <a class="secondary" id="original-link">Download original</a>
+        <a class="secondary" id="reviewed-link">Download reviewed</a>
+      </div>
+    </section>
+  </main>
+  <script>
+    const statusEl = document.querySelector("#status");
+    const workspace = document.querySelector("#workspace");
+    const player = document.querySelector("#player");
+    const cuesEl = document.querySelector("#cues");
+    const queueEl = document.querySelector("#queue");
+    const emptyEl = document.querySelector("#empty");
+    const editorEmpty = document.querySelector("#editor-empty");
+    const editorBody = document.querySelector("#editor-body");
+    let state = null;
+    let selectedFlagId = null;
+    let selectedCueId = null;
+
+    function clock(seconds) {
+      const whole = Math.max(0, Math.floor(seconds));
+      return String(Math.floor(whole / 60)).padStart(2, "0") + ":" + String(whole % 60).padStart(2, "0");
+    }
+
+    function playAt(start) {
+      player.currentTime = Math.max(0, start - 1);
+      player.play();
+    }
+
+    function openFlag(flag) {
+      selectedFlagId = flag.id;
+      selectedCueId = flag.cueId;
+      playAt(flag.start);
+      render();
+    }
+
+    function selectedFlag() {
+      return (state && state.flags || []).find((flag) => flag.id === selectedFlagId) || null;
+    }
+
+    function renderEditor() {
+      const flag = selectedFlag();
+      const cue = (state && state.cues || []).find((item) => item.id === selectedCueId) || null;
+      if (!flag && !cue) {
+        editorEmpty.classList.remove("hidden");
+        editorBody.classList.add("hidden");
+        return;
+      }
+      editorEmpty.classList.add("hidden");
+      editorBody.classList.remove("hidden");
+      document.querySelector("#why-label").textContent = flag ? flag.why : "Working copy";
+      const caption = flag ? flag.captionText : cue.text;
+      const audio = flag ? flag.audioText : (cue && cue.audioText) || "";
+      document.querySelector("#cap-label").textContent = caption || "No caption in this range.";
+      document.querySelector("#audio-label").textContent = audio || "No overlapping transcript.";
+      const score = flag && flag.score != null ? Number(flag.score).toFixed(2) : "—";
+      document.querySelector("#score-label").textContent = score;
+      const box = document.querySelector("#caption-edit");
+      if (document.activeElement !== box) {
+        box.value = flag ? (flag.cueId == null ? (flag.suggestion || "") : flag.captionText) : cue.text;
+      }
+      document.querySelector("#dismiss").classList.toggle("hidden", !flag);
+      document.querySelector("#apply").textContent = flag && flag.cueId == null ? "Add cue" : "Apply";
+    }
+
+    function render() {
+      workspace.classList.remove("hidden");
+      document.querySelector("#limit").textContent = state.limit;
+      if (player.dataset.session !== state.id) {
+        player.dataset.session = state.id;
+        player.src = state.videoUrl;
+      }
+      cuesEl.replaceChildren();
+      for (const cue of state.cues) {
+        const item = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = (cue.flagged ? "flagged " : "") + (cue.id === selectedCueId ? "active" : "");
+        const time = document.createElement("span");
+        time.className = "time";
+        time.textContent = clock(cue.start);
+        button.append(time, document.createTextNode(cue.text));
+        button.addEventListener("click", () => {
+          selectedCueId = cue.id;
+          selectedFlagId = (state.flags.find((flag) => flag.cueId === cue.id) || {}).id || null;
+          playAt(cue.start);
+          render();
+        });
+        item.append(button);
+        cuesEl.append(item);
+      }
+      queueEl.replaceChildren();
+      emptyEl.classList.toggle("hidden", state.flags.length > 0);
+      for (const flag of state.flags) {
+        const row = document.createElement("tr");
+        if (flag.id === selectedFlagId) row.className = "selected";
+        const timeCell = document.createElement("td");
+        const open = document.createElement("button");
+        open.type = "button";
+        open.textContent = clock(flag.start);
+        open.addEventListener("click", () => openFlag(flag));
+        timeCell.append(open);
+        row.append(timeCell);
+        for (const value of [flag.possibleIssue, flag.why, flag.score == null ? "—" : Number(flag.score).toFixed(2)]) {
+          const cell = document.createElement("td");
+          cell.textContent = value;
+          row.append(cell);
+        }
+        row.addEventListener("click", () => openFlag(flag));
+        queueEl.append(row);
+      }
+      document.querySelector("#original-link").href = "/api/sessions/" + state.id + "/original.srt";
+      document.querySelector("#reviewed-link").href = "/api/sessions/" + state.id + "/reviewed.srt";
+      renderEditor();
+    }
+
+    async function send(url, options) {
+      const response = await fetch(url, options);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "Request failed");
+      return payload;
+    }
+
+    async function useState(next) {
+      const previousFlag = selectedFlagId;
+      state = next;
+      if (previousFlag && !state.flags.some((flag) => flag.id === previousFlag)) {
+        selectedFlagId = null;
+      }
+      statusEl.textContent = "";
+      render();
+    }
+
+    document.querySelector("#upload").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = event.target.querySelector("button[type=submit]");
+      button.disabled = true;
+      statusEl.textContent = "Transcribing audio. The first run downloads the speech model and can take several minutes.";
+      try {
+        await useState(await send("/api/sessions", { method: "POST", body: new FormData(event.target) }));
+      } catch (error) {
+        statusEl.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.querySelector("#demo").addEventListener("click", async () => {
+      statusEl.textContent = "Loading the planted sample.";
+      try {
+        await useState(await send("/api/sessions/demo", { method: "POST" }));
+      } catch (error) {
+        statusEl.textContent = error.message;
+      }
+    });
+
+    document.querySelector("#play").addEventListener("click", () => {
+      const flag = selectedFlag();
+      const cue = (state.cues || []).find((item) => item.id === selectedCueId);
+      playAt(flag ? flag.start : cue.start);
+    });
+
+    document.querySelector("#apply").addEventListener("click", async () => {
+      const text = document.querySelector("#caption-edit").value;
+      const flag = selectedFlag();
+      try {
+        if (flag) {
+          await useState(await send("/api/sessions/" + state.id + "/apply", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ flagId: flag.id, text })
+          }));
+        } else if (selectedCueId != null) {
+          await useState(await send("/api/sessions/" + state.id + "/cues/" + selectedCueId, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text })
+          }));
+        }
+      } catch (error) {
+        statusEl.textContent = error.message;
+      }
+    });
+
+    document.querySelector("#dismiss").addEventListener("click", async () => {
+      const flag = selectedFlag();
+      if (!flag) return;
+      try {
+        await useState(await send("/api/sessions/" + state.id + "/dismiss", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ flagId: flag.id })
+        }));
+      } catch (error) {
+        statusEl.textContent = error.message;
+      }
+    });
+  </script>
+</body>
+</html>
