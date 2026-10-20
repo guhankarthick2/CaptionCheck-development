@@ -111,13 +111,14 @@
   <main>
     <form id="upload">
       <div class="row">
-        <label>Video (MP4)<input name="video" type="file" accept="video/mp4,.mp4" required></label>
+        <label>Video (MP4 or WebM)<input name="video" type="file" accept="video/mp4,video/webm,.mp4,.webm,.mov,.mkv" required></label>
         <label>Captions (SRT)<input name="srt" type="file" accept=".srt,text/plain" required></label>
-        <label>Glossary, optional<input name="glossary" type="text" placeholder="mitosis, milligram"></label>
+        <label>Glossary, optional<input name="glossary" type="text" placeholder="mitosis, surface tension"></label>
         <button type="submit">Check captions</button>
         <button type="button" class="secondary" id="demo">Open planted sample</button>
       </div>
       <p class="status" id="status" role="status"></p>
+      <p class="lede" id="progress" style="margin-top:8px;"></p>
     </form>
 
     <section id="workspace" class="workspace hidden">
@@ -174,6 +175,7 @@
   </main>
   <script>
     const statusEl = document.querySelector("#status");
+    const progressEl = document.querySelector("#progress");
     const workspace = document.querySelector("#workspace");
     const player = document.querySelector("#player");
     const cuesEl = document.querySelector("#cues");
@@ -232,14 +234,22 @@
     }
 
     function render() {
+      if (state.status && state.status !== "ready") {
+        workspace.classList.add("hidden");
+        progressEl.textContent = state.progress || "Working…";
+        return;
+      }
       workspace.classList.remove("hidden");
+      progressEl.textContent = state.trimmed
+        ? "Video was longer than the limit, so only the first " + Math.round(state.maxSeconds) + " seconds were checked."
+        : "";
       document.querySelector("#limit").textContent = state.limit;
       if (player.dataset.session !== state.id) {
         player.dataset.session = state.id;
         player.src = state.videoUrl;
       }
       cuesEl.replaceChildren();
-      for (const cue of state.cues) {
+      for (const cue of state.cues || []) {
         const item = document.createElement("li");
         const button = document.createElement("button");
         button.type = "button";
@@ -258,8 +268,8 @@
         cuesEl.append(item);
       }
       queueEl.replaceChildren();
-      emptyEl.classList.toggle("hidden", state.flags.length > 0);
-      for (const flag of state.flags) {
+      emptyEl.classList.toggle("hidden", (state.flags || []).length > 0);
+      for (const flag of state.flags || []) {
         const row = document.createElement("tr");
         if (flag.id === selectedFlagId) row.className = "selected";
         const timeCell = document.createElement("td");
@@ -292,33 +302,58 @@
     async function useState(next) {
       const previousFlag = selectedFlagId;
       state = next;
-      if (previousFlag && !state.flags.some((flag) => flag.id === previousFlag)) {
+      if (previousFlag && !(state.flags || []).some((flag) => flag.id === previousFlag)) {
         selectedFlagId = null;
       }
-      statusEl.textContent = "";
+      statusEl.textContent = state.error || "";
       render();
+    }
+
+    async function waitUntilReady(sessionId) {
+      for (;;) {
+        const next = await send("/api/sessions/" + sessionId);
+        await useState(next);
+        if (next.status === "ready") return next;
+        if (next.status === "error") throw new Error(next.error || "Processing failed");
+        progressEl.textContent = next.progress || "Working…";
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+    }
+
+    async function startSession(url, options) {
+      const started = await send(url, options);
+      if (started.status === "ready") {
+        await useState(started);
+        return started;
+      }
+      await useState(started);
+      return waitUntilReady(started.id);
     }
 
     document.querySelector("#upload").addEventListener("submit", async (event) => {
       event.preventDefault();
       const button = event.target.querySelector("button[type=submit]");
       button.disabled = true;
-      statusEl.textContent = "Transcribing audio. The first run downloads the speech model and can take several minutes.";
+      statusEl.textContent = "";
+      progressEl.textContent = "Uploading…";
       try {
-        await useState(await send("/api/sessions", { method: "POST", body: new FormData(event.target) }));
+        await startSession("/api/sessions", { method: "POST", body: new FormData(event.target) });
       } catch (error) {
         statusEl.textContent = error.message;
+        progressEl.textContent = "";
       } finally {
         button.disabled = false;
       }
     });
 
     document.querySelector("#demo").addEventListener("click", async () => {
-      statusEl.textContent = "Loading the planted sample.";
+      statusEl.textContent = "";
+      progressEl.textContent = "Loading the planted sample…";
       try {
-        await useState(await send("/api/sessions/demo", { method: "POST" }));
+        await startSession("/api/sessions/demo", { method: "POST" });
       } catch (error) {
         statusEl.textContent = error.message;
+        progressEl.textContent = "";
       }
     });
 

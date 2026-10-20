@@ -5,24 +5,28 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import traceback
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from flags import audio_text, build_flags, words_in_cue
+from flags import audio_text, build_flags, normalize_caption_text, words_in_cue
 from srt_io import Cue, parse_srt, write_srt
-from transcribe import extract_wav, load_or_transcribe
+from transcribe import convert_to_mp4, extract_wav, load_or_transcribe, media_duration_seconds
 
 ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get("CAPTIONCHECK_DATA", ROOT / "data" / "sessions"))
 SAMPLES = ROOT / "samples"
+MAX_SECONDS = float(os.environ.get("CAPTIONCHECK_MAX_SECONDS", "90"))
+ALLOWED_VIDEO = {".mp4", ".webm", ".mov", ".mkv"}
 LIMIT = (
     "If the second transcript hears the same wrong word as the caption, that line will not appear. "
-    "Every row is a possible issue."
+    "Every row is a possible issue. Clips longer than "
+    f"{int(MAX_SECONDS)} seconds are trimmed."
 )
 
 app = FastAPI(title="CaptionCheck")
@@ -60,6 +64,18 @@ def cues_from_state(state: dict) -> list[Cue]:
 
 
 def public_state(path: Path, state: dict) -> dict:
+    status = state.get("status", "ready")
+    base = {
+        "id": state["id"],
+        "status": status,
+        "progress": state.get("progress", ""),
+        "limit": LIMIT,
+        "glossary": state.get("glossary") or [],
+        "error": state.get("error"),
+        "maxSeconds": MAX_SECONDS,
+    }
+    if status != "ready":
+        return base
     cues = cues_from_state(state)
     flags = build_flags(
         cues,
@@ -74,51 +90,137 @@ def public_state(path: Path, state: dict) -> dict:
         row["audioText"] = audio_text(words_in_cue(state["words"], cue))
         cue_rows.append(row)
     return {
-        "id": state["id"],
-        "limit": LIMIT,
-        "glossary": state.get("glossary") or [],
+        **base,
         "cues": cue_rows,
         "flags": flags,
         "videoUrl": f"/api/sessions/{state['id']}/video",
         "emptySpeech": not state["words"],
+        "trimmed": bool(state.get("trimmed")),
+        "duration": state.get("duration"),
     }
 
 
-def create_session(video_bytes: bytes, video_name: str, srt_bytes: bytes, glossary: list[str]) -> dict:
+def decode_srt(srt_bytes: bytes) -> list[Cue]:
+    for encoding in ("utf-8-sig", "utf-8", "cp1252"):
+        try:
+            text = srt_bytes.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise HTTPException(status_code=400, detail="The SRT file must be readable text.")
     try:
-        cues = parse_srt(srt_bytes.decode("utf-8"))
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="The SRT file must be UTF-8 text.") from exc
+        cues = parse_srt(text)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not cues:
         raise HTTPException(status_code=400, detail="The SRT file has no caption cues.")
+    for cue in cues:
+        cue.text = normalize_caption_text(cue.text)
+    return cues
+
+
+def set_progress(path: Path, state: dict, message: str) -> None:
+    state["progress"] = message
+    save_state(path, state)
+
+
+def process_session(session_id: str) -> None:
+    path = DATA / session_id
+    state = load_state(path)
+    try:
+        set_progress(path, state, "Checking video length…")
+        source = next(path.glob("upload.*"))
+        duration = media_duration_seconds(source)
+        state["duration"] = round(duration, 2)
+        trimmed = duration > MAX_SECONDS
+        state["trimmed"] = trimmed
+
+        set_progress(path, state, "Preparing video…")
+        video_path = path / "video.mp4"
+        if source.suffix.lower() == ".mp4" and not trimmed:
+            shutil.copyfile(source, video_path)
+        else:
+            convert_to_mp4(source, video_path, MAX_SECONDS if trimmed else None)
+
+        set_progress(path, state, "Extracting audio…")
+        wav_path = path / "audio.wav"
+        extract_wav(video_path, wav_path)
+
+        set_progress(path, state, "Transcribing speech. The first run downloads the model…")
+        words = load_or_transcribe(wav_path, path / "words.json")
+        if trimmed:
+            words = [word for word in words if word["start"] < MAX_SECONDS]
+
+        original_cues = decode_srt((path / "original.srt").read_bytes())
+        if trimmed:
+            kept = []
+            for cue in original_cues:
+                if cue.start >= MAX_SECONDS:
+                    continue
+                if cue.end > MAX_SECONDS:
+                    cue.end = MAX_SECONDS
+                kept.append(cue)
+            original_cues = kept
+
+        state["words"] = words
+        state["cues"] = [cue.to_dict() for cue in original_cues]
+        state["status"] = "ready"
+        state["progress"] = "Ready"
+        state["error"] = None
+        save_state(path, state)
+    except Exception as exc:
+        state["status"] = "error"
+        state["progress"] = "Failed"
+        detail = getattr(exc, "stderr", b"")
+        if isinstance(detail, bytes) and detail:
+            message = detail.decode("utf-8", errors="replace")[-500:]
+        else:
+            message = str(exc) or traceback.format_exc()[-500:]
+        state["error"] = message
+        save_state(path, state)
+
+
+def create_session(
+    video_bytes: bytes,
+    video_name: str,
+    srt_bytes: bytes,
+    glossary: list[str],
+    background_tasks: BackgroundTasks | None = None,
+    wait: bool = False,
+) -> dict:
+    suffix = Path(video_name).suffix.lower() or ".mp4"
+    if suffix not in ALLOWED_VIDEO:
+        raise HTTPException(
+            status_code=400,
+            detail="Upload an MP4 or WebM video (MOV and MKV also work).",
+        )
+    decode_srt(srt_bytes)  # validate early
 
     session_id = uuid.uuid4().hex
     path = DATA / session_id
     path.mkdir(parents=True, exist_ok=True)
-    suffix = Path(video_name).suffix.lower() or ".mp4"
-    video_path = path / f"video{suffix}"
-    video_path.write_bytes(video_bytes)
+    (path / f"upload{suffix}").write_bytes(video_bytes)
     (path / "original.srt").write_bytes(srt_bytes)
-    wav_path = path / "audio.wav"
-    try:
-        extract_wav(video_path, wav_path)
-        words = load_or_transcribe(wav_path, path / "words.json")
-    except Exception as exc:
-        shutil.rmtree(path, ignore_errors=True)
-        detail = getattr(exc, "stderr", b"")
-        message = detail.decode("utf-8", errors="replace")[-500:] if detail else str(exc)
-        raise HTTPException(status_code=500, detail=message or "Transcription failed.") from exc
-
     state = {
         "id": session_id,
+        "status": "processing",
+        "progress": "Queued…",
         "glossary": glossary,
         "dismissed": [],
-        "words": words,
-        "cues": [cue.to_dict() for cue in cues],
+        "words": [],
+        "cues": [],
+        "error": None,
+        "trimmed": False,
+        "duration": None,
     }
     save_state(path, state)
+
+    if wait or background_tasks is None:
+        process_session(session_id)
+        return public_state(path, load_state(path))
+
+    background_tasks.add_task(process_session, session_id)
     return public_state(path, state)
 
 
@@ -133,25 +235,38 @@ def index() -> FileResponse:
 
 @app.post("/api/sessions")
 async def upload_session(
+    background_tasks: BackgroundTasks,
     video: UploadFile = File(...),
     srt: UploadFile = File(...),
     glossary: str = Form(""),
 ) -> dict:
     video_name = video.filename or "video.mp4"
-    if Path(video_name).suffix.lower() != ".mp4":
-        raise HTTPException(status_code=400, detail="Upload one MP4 video.")
     if Path(srt.filename or "").suffix.lower() != ".srt":
         raise HTTPException(status_code=400, detail="Upload one SRT caption file.")
-    return create_session(await video.read(), video_name, await srt.read(), parse_glossary(glossary))
+    return create_session(
+        await video.read(),
+        video_name,
+        await srt.read(),
+        parse_glossary(glossary),
+        background_tasks=background_tasks,
+        wait=False,
+    )
 
 
 @app.post("/api/sessions/demo")
-def demo_session() -> dict:
+def demo_session(background_tasks: BackgroundTasks) -> dict:
     video = SAMPLES / "demo.mp4"
     srt = SAMPLES / "demo.srt"
     if not video.exists() or not srt.exists():
         raise HTTPException(status_code=404, detail="The planted sample is not in the samples folder.")
-    return create_session(video.read_bytes(), video.name, srt.read_bytes(), ["mitosis"])
+    return create_session(
+        video.read_bytes(),
+        video.name,
+        srt.read_bytes(),
+        ["mitosis"],
+        background_tasks=background_tasks,
+        wait=False,
+    )
 
 
 @app.get("/api/sessions/{session_id}")
@@ -163,19 +278,21 @@ def get_session(session_id: str) -> dict:
 @app.get("/api/sessions/{session_id}/video")
 def session_video(session_id: str) -> FileResponse:
     path = session_dir(session_id)
-    matches = list(path.glob("video.*"))
-    if not matches:
-        raise HTTPException(status_code=404, detail="Video missing")
-    return FileResponse(matches[0], media_type="video/mp4")
+    video = path / "video.mp4"
+    if not video.exists():
+        raise HTTPException(status_code=404, detail="Video is still processing or missing")
+    return FileResponse(video, media_type="video/mp4")
 
 
 @app.post("/api/sessions/{session_id}/cues/{cue_id}")
 def edit_cue(session_id: str, cue_id: int, body: TextBody) -> dict:
-    text = body.text.strip()
+    text = normalize_caption_text(body.text)
     if not text:
         raise HTTPException(status_code=400, detail="Caption text cannot be empty.")
     path = session_dir(session_id)
     state = load_state(path)
+    if state.get("status") != "ready":
+        raise HTTPException(status_code=409, detail="Session is still processing")
     for cue in state["cues"]:
         if cue["id"] == cue_id:
             cue["text"] = text
@@ -190,6 +307,8 @@ def edit_cue(session_id: str, cue_id: int, body: TextBody) -> dict:
 def dismiss_flag(session_id: str, body: FlagBody) -> dict:
     path = session_dir(session_id)
     state = load_state(path)
+    if state.get("status") != "ready":
+        raise HTTPException(status_code=409, detail="Session is still processing")
     flags = build_flags(
         cues_from_state(state),
         state["words"],
@@ -206,11 +325,13 @@ def dismiss_flag(session_id: str, body: FlagBody) -> dict:
 
 @app.post("/api/sessions/{session_id}/apply")
 def apply_flag(session_id: str, body: FlagBody) -> dict:
-    text = (body.text or "").strip()
+    text = normalize_caption_text(body.text or "")
     if not text:
         raise HTTPException(status_code=400, detail="Enter the caption text before applying it.")
     path = session_dir(session_id)
     state = load_state(path)
+    if state.get("status") != "ready":
+        raise HTTPException(status_code=409, detail="Session is still processing")
     flags = build_flags(
         cues_from_state(state),
         state["words"],
@@ -249,6 +370,8 @@ def download_original(session_id: str) -> Response:
 def download_reviewed(session_id: str) -> Response:
     path = session_dir(session_id)
     state = load_state(path)
+    if state.get("status") != "ready":
+        raise HTTPException(status_code=409, detail="Session is still processing")
     payload = write_srt(cues_from_state(state)).encode("utf-8")
     (path / "reviewed.srt").write_bytes(payload)
     return Response(

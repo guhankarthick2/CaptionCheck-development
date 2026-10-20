@@ -1,5 +1,6 @@
 import io
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -40,13 +41,23 @@ class ReviewFlowTests(unittest.TestCase):
         self.patch.stop()
         self.tmp.cleanup()
 
+    def wait_ready(self, session_id: str) -> dict:
+        for _ in range(50):
+            payload = self.client.get(f"/api/sessions/{session_id}").json()
+            if payload.get("status") in {"ready", "error"}:
+                return payload
+            time.sleep(0.05)
+        self.fail("session never became ready")
+
     def upload(self):
         srt = (
             "1\n00:00:00,100 --> 00:00:02,500\nMix these chemicals.\n\n"
             "2\n00:00:03,800 --> 00:00:06,500\nUse 0.5 milligrams.\n"
         ).encode()
-        with patch.object(app_module, "extract_wav", lambda source, wav: wav.write_bytes(b"RIFFstub")), patch.object(
-            app_module, "load_or_transcribe", lambda wav, dest: self.words
+        with (
+            patch.object(app_module, "media_duration_seconds", return_value=12.0),
+            patch.object(app_module, "extract_wav", lambda source, wav: wav.write_bytes(b"RIFFstub")),
+            patch.object(app_module, "load_or_transcribe", lambda wav, dest: self.words),
         ):
             response = self.client.post(
                 "/api/sessions",
@@ -57,7 +68,11 @@ class ReviewFlowTests(unittest.TestCase):
                 data={"glossary": "mitosis"},
             )
         self.assertEqual(response.status_code, 200, response.text)
-        return response.json(), srt
+        payload = response.json()
+        if payload.get("status") != "ready":
+            payload = self.wait_ready(payload["id"])
+        self.assertEqual(payload["status"], "ready", payload)
+        return payload, srt
 
     def test_flags_edit_dismiss_and_preserve_original(self):
         payload, srt = self.upload()

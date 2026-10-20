@@ -50,6 +50,57 @@ def extract_wav(source: Path, wav_path: Path) -> None:
     )
 
 
+def ffprobe_executable() -> str:
+    ffmpeg = Path(ffmpeg_executable())
+    probe = ffmpeg.with_name("ffprobe.exe" if ffmpeg.suffix.lower() == ".exe" else "ffprobe")
+    if probe.exists():
+        return str(probe)
+    found = shutil.which("ffprobe")
+    if found:
+        return found
+    raise RuntimeError("ffprobe is required to check video length.")
+
+
+def media_duration_seconds(source: Path) -> float:
+    result = subprocess.run(
+        [
+            ffprobe_executable(),
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return float(result.stdout.strip())
+
+
+def convert_to_mp4(source: Path, dest: Path, max_seconds: float | None = None) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    command = [ffmpeg_executable(), "-y", "-i", str(source)]
+    if max_seconds is not None:
+        command.extend(["-t", f"{max_seconds:.3f}"])
+    command.extend(
+        [
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "+faststart",
+            str(dest),
+        ]
+    )
+    subprocess.run(command, check=True, capture_output=True)
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:

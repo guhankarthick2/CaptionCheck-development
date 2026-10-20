@@ -47,26 +47,74 @@ CONTRACTIONS = {
 }
 
 NEGATION = {"not", "no", "never", "without"}
-DIGIT_WORDS = {
-    "zero": "0",
-    "oh": "0",
-    "one": "1",
-    "two": "2",
-    "three": "3",
-    "four": "4",
-    "five": "5",
-    "six": "6",
-    "seven": "7",
-    "eight": "8",
-    "nine": "9",
+ONES = {
+    "zero": 0,
+    "oh": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
 }
+TENS = {
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+}
+SCALES = {
+    "hundred": 100,
+    "thousand": 1_000,
+    "million": 1_000_000,
+    "billion": 1_000_000_000,
+}
+DIGIT_WORDS = {key: str(value) for key, value in ONES.items() if value < 10}
+DIGIT_WORDS["oh"] = "0"
+NUMBER_WORDS = set(ONES) | set(TENS) | set(SCALES) | {"point", "and"}
 FILLERS = {"uh", "um", "like", "the", "a"}
+PROMO_RE = re.compile(
+    r"\b(subscribe|like and share|thanks for watching|thank you for watching|"
+    r"follow us|hit the bell|leave a comment|smash that like)\b",
+    re.I,
+)
+NONSPEECH_RE = re.compile(
+    r"^\[?\s*(music|silence|silence,? wind|wind|applause|laughter|inaudible|"
+    r"background|sound|noise|beeping|explosion|rumbling)\s*\]?$",
+    re.I,
+)
 
 _KIND_ORDER = {"number": 0, "negation": 1, "glossary": 2, "missing": 3}
 
 
+def normalize_caption_text(text: str) -> str:
+    cleaned = text.replace("\ufeff", "")
+    cleaned = cleaned.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
+    cleaned = cleaned.replace("�", "'")
+    cleaned = re.sub(r"^>+", "", cleaned.strip())
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
 def tokenize(text: str) -> list[str]:
-    lowered = text.lower().replace("’", "'")
+    lowered = normalize_caption_text(text).lower().replace("-", " ")
     for source, target in CONTRACTIONS.items():
         lowered = re.sub(rf"\b{re.escape(source)}\b", target, lowered)
     lowered = re.sub(r"[^a-z0-9.'\s]", " ", lowered)
@@ -82,49 +130,96 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
+def _parse_spoken_chunk(tokens: list[str], start: int) -> tuple[Decimal | None, int]:
+    """Parse a spoken number starting at tokens[start]. Returns (value, next_index)."""
+    index = start
+    if index >= len(tokens):
+        return None, start
+
+    # Digits already present, optionally split as "0" ".05"
+    if re.fullmatch(r"\d+", tokens[index]):
+        if index + 1 < len(tokens) and re.fullmatch(r"\.\d+", tokens[index + 1]):
+            return Decimal(tokens[index] + tokens[index + 1]), index + 2
+        if index + 1 < len(tokens) and tokens[index + 1] == "point":
+            frac = []
+            cursor = index + 2
+            while cursor < len(tokens) and tokens[cursor] in ONES and ONES[tokens[cursor]] < 10:
+                frac.append(str(ONES[tokens[cursor]]))
+                cursor += 1
+            if frac:
+                return Decimal(f"{tokens[index]}.{''.join(frac)}"), cursor
+        return Decimal(tokens[index]), index + 1
+    if re.fullmatch(r"\.\d+", tokens[index]):
+        return Decimal("0" + tokens[index]), index + 1
+    if re.fullmatch(r"\d+\.\d+", tokens[index]):
+        return Decimal(tokens[index]), index + 1
+
+    # Leading "point five" style decimals
+    if tokens[index] == "point":
+        frac = []
+        cursor = index + 1
+        while cursor < len(tokens) and tokens[cursor] in ONES and ONES[tokens[cursor]] < 10:
+            frac.append(str(ONES[tokens[cursor]]))
+            cursor += 1
+        if frac:
+            return Decimal("0." + "".join(frac)), cursor
+        return None, start
+
+    total = 0
+    current = 0
+    consumed = False
+    cursor = index
+    while cursor < len(tokens):
+        token = tokens[cursor]
+        if token == "and" and consumed:
+            cursor += 1
+            continue
+        if token in ONES:
+            current += ONES[token]
+            consumed = True
+            cursor += 1
+            continue
+        if token in TENS:
+            current += TENS[token]
+            consumed = True
+            cursor += 1
+            continue
+        if token == "hundred" and consumed:
+            current *= 100
+            cursor += 1
+            continue
+        if token in SCALES and token != "hundred" and consumed:
+            total += current * SCALES[token]
+            current = 0
+            cursor += 1
+            continue
+        if token == "point" and consumed:
+            frac = []
+            cursor += 1
+            while cursor < len(tokens) and tokens[cursor] in ONES and ONES[tokens[cursor]] < 10:
+                frac.append(str(ONES[tokens[cursor]]))
+                cursor += 1
+            value = Decimal(total + current)
+            if frac:
+                value = Decimal(f"{format(value, 'f')}.{''.join(frac)}")
+            return value, cursor
+        break
+    if not consumed:
+        return None, start
+    return Decimal(total + current), cursor
+
+
 def extract_numbers(text: str) -> set[Decimal]:
     tokens = tokenize(text)
     found: set[Decimal] = set()
     index = 0
     while index < len(tokens):
-        token = tokens[index]
-        if (
-            re.fullmatch(r"\d+", token)
-            and index + 1 < len(tokens)
-            and re.fullmatch(r"\.\d+", tokens[index + 1])
-        ):
-            found.add(Decimal(token + tokens[index + 1]))
-            index += 2
+        value, next_index = _parse_spoken_chunk(tokens, index)
+        if value is not None and next_index > index:
+            found.add(value)
+            index = next_index
             continue
-        if re.fullmatch(r"\.\d+", token):
-            found.add(Decimal("0" + token))
-            index += 1
-            continue
-        if re.fullmatch(r"\d+(?:\.\d+)?", token):
-            found.add(Decimal(token))
-            index += 1
-            continue
-        if token not in DIGIT_WORDS and token != "point":
-            index += 1
-            continue
-        parts: list[str] = []
-        saw_point = False
-        cursor = index
-        while cursor < len(tokens) and (tokens[cursor] in DIGIT_WORDS or tokens[cursor] == "point"):
-            if tokens[cursor] == "point":
-                if saw_point:
-                    break
-                saw_point = True
-                parts.append(".")
-            else:
-                parts.append(DIGIT_WORDS[tokens[cursor]])
-            cursor += 1
-        literal = "".join(parts)
-        if literal.startswith("."):
-            literal = "0" + literal
-        if saw_point and re.fullmatch(r"\d+\.\d+", literal):
-            found.add(Decimal(literal))
-        index = max(cursor, index + 1)
+        index += 1
     return found
 
 
@@ -145,6 +240,40 @@ def overlap(start_a: float, end_a: float, start_b: float, end_b: float) -> float
 
 def words_in_cue(words: list[dict], cue: Cue) -> list[dict]:
     return [word for word in words if overlap(word["start"], word["end"], cue.start, cue.end) > 0]
+
+
+def is_nonspeech_cue(cue: Cue) -> bool:
+    text = normalize_caption_text(cue.text)
+    stripped = text.strip("[] ").lower()
+    if NONSPEECH_RE.match(stripped) or NONSPEECH_RE.match(text):
+        return True
+    if text.startswith("[") and text.endswith("]") and not re.search(r"[a-zA-Z]{4,}", text.strip("[]")):
+        return True
+    return bool(re.fullmatch(r"\[.*\]", text) and not re.search(r"[A-Za-z]{3,}", text.strip("[]")))
+
+
+def merge_cues(cues: list[Cue], max_gap: float = 0.35) -> list[Cue]:
+    """Combine nearby short cues so fragmented captions compare as phrases."""
+    if not cues:
+        return []
+    ordered = sorted(cues, key=lambda cue: (cue.start, cue.id))
+    merged: list[Cue] = []
+    current = Cue(ordered[0].id, ordered[0].start, ordered[0].end, ordered[0].text)
+    for cue in ordered[1:]:
+        gap = cue.start - current.end
+        short = (current.end - current.start) < 2.5 or (cue.end - cue.start) < 2.5
+        if gap <= max_gap and short and not is_nonspeech_cue(current) and not is_nonspeech_cue(cue):
+            current = Cue(
+                current.id,
+                current.start,
+                max(current.end, cue.end),
+                normalize_caption_text(f"{current.text} {cue.text}"),
+            )
+        else:
+            merged.append(current)
+            current = Cue(cue.id, cue.start, cue.end, cue.text)
+    merged.append(current)
+    return merged
 
 
 def speech_runs(words: list[dict], max_gap: float = 0.6) -> list[dict]:
@@ -244,7 +373,7 @@ def _number_flag(cue: Cue, overlapping: list[dict]) -> dict | None:
         return None
     if not caption_values and not audio_values:
         return None
-    number_tokens = set(DIGIT_WORDS) | {"point"}
+    number_tokens = set(NUMBER_WORDS)
     relevant = []
     for word in overlapping:
         pieces = tokenize(word["word"])
@@ -312,6 +441,19 @@ def _contains_phrase(tokens: list[str], phrase: list[str]) -> bool:
     return any(tokens[index : index + width] == phrase for index in range(len(tokens) - width + 1))
 
 
+def _phrase_near_miss(tokens: list[str], phrase: list[str]) -> bool:
+    """True when a multi-word glossary phrase appears with a 1-2 letter edit on one word."""
+    if len(phrase) < 2 or len(phrase) > len(tokens):
+        return False
+    width = len(phrase)
+    for index in range(len(tokens) - width + 1):
+        window = tokens[index : index + width]
+        distance = sum(levenshtein(left, right) for left, right in zip(window, phrase))
+        if 1 <= distance <= 2 and all(len(word) >= 4 for word in phrase):
+            return True
+    return False
+
+
 def _glossary_flags(cue: Cue, overlapping: list[dict], glossary: list[str]) -> list[dict]:
     heard = audio_text(overlapping)
     audio_tokens = tokenize(heard)
@@ -362,21 +504,39 @@ def _glossary_flags(cue: Cue, overlapping: list[dict], glossary: list[str]) -> l
                             None,
                         )
                     )
-        elif _contains_phrase(audio_tokens, term_tokens) and not _contains_phrase(caption_tokens, term_tokens):
-            flags.append(
-                _flag(
-                    "glossary",
-                    "Glossary term missing from caption",
-                    "Changes a required term",
-                    overlapping[0]["start"] if overlapping else cue.start,
-                    overlapping[-1]["end"] if overlapping else cue.end,
-                    cue.id,
-                    cue.text,
-                    heard,
-                    _score(overlapping),
-                    None,
+        else:
+            in_audio = _contains_phrase(audio_tokens, term_tokens)
+            in_caption = _contains_phrase(caption_tokens, term_tokens)
+            if in_audio and not in_caption:
+                flags.append(
+                    _flag(
+                        "glossary",
+                        "Glossary term missing from caption",
+                        "Changes a required term",
+                        overlapping[0]["start"] if overlapping else cue.start,
+                        overlapping[-1]["end"] if overlapping else cue.end,
+                        cue.id,
+                        cue.text,
+                        heard,
+                        _score(overlapping),
+                        None,
+                    )
                 )
-            )
+            elif in_caption and not in_audio and _phrase_near_miss(audio_tokens, term_tokens):
+                flags.append(
+                    _flag(
+                        "glossary",
+                        "Glossary term may be misspelled",
+                        "Changes a required term",
+                        overlapping[0]["start"] if overlapping else cue.start,
+                        overlapping[-1]["end"] if overlapping else cue.end,
+                        cue.id,
+                        cue.text,
+                        heard,
+                        _score(overlapping),
+                        None,
+                    )
+                )
     return flags
 
 
@@ -400,6 +560,8 @@ def _missing_flags(cues: list[Cue], words: list[dict]) -> list[dict]:
         if len(content) < 2:
             continue
         heard = audio_text(run_words)
+        if PROMO_RE.search(heard):
+            continue
         flags.append(
             _flag(
                 "missing",
@@ -425,8 +587,11 @@ def build_flags(
 ) -> list[dict]:
     glossary = glossary or []
     dismissed = dismissed or set()
+    # Preserve original cues for UI edits; analyze on merged nonspeech-aware groups.
+    analysis_cues = [cue for cue in merge_cues(cues) if not is_nonspeech_cue(cue)]
+    coverage_cues = list(cues)
     flags: list[dict] = []
-    for cue in cues:
+    for cue in analysis_cues:
         overlapping = words_in_cue(words, cue)
         if not overlapping:
             continue
@@ -437,7 +602,7 @@ def build_flags(
         if negation:
             flags.append(negation)
         flags.extend(_glossary_flags(cue, overlapping, glossary))
-    flags.extend(_missing_flags(cues, words))
+    flags.extend(_missing_flags(coverage_cues, words))
     seen: dict[str, int] = {}
     unique = []
     for flag in flags:
