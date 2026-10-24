@@ -4,74 +4,366 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CaptionCheck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,640;0,9..144,700;1,9..144,560&display=swap" rel="stylesheet">
   <style>
     :root {
       color-scheme: light;
-      --ink: #1c1915;
-      --muted: #5c564c;
-      --line: #d9d1c5;
-      --paper: #f6f3ee;
-      --card: #fffdf9;
-      --accent: #0f5c56;
+      --ink: #2a221c;
+      --muted: #6f645a;
+      --line: #e7dccf;
+      --paper: #f6f1ea;
+      --card: #fffdf8;
+      --accent: #1f4f4a;
       --accent-ink: #ffffff;
-      --mark: #f3e2c4;
-      --danger: #8a3b24;
+      --accent-soft: #e4f0ee;
+      --mark: #fde6c8;
+      --danger: #c45c3a;
+      --blush: #f3d5dc;
+      --peach: #f6b89a;
+      --gold: #f3c46a;
+      --rose: #e989a8;
+      --shadow: 0 18px 40px rgba(42, 34, 28, 0.08);
+      --radius: 22px;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Segoe UI", system-ui, sans-serif;
+      font-family: "DM Sans", "Segoe UI", system-ui, sans-serif;
       color: var(--ink);
       background: var(--paper);
-      line-height: 1.45;
+      line-height: 1.5;
     }
-    header, main { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
-    header { padding-bottom: 0; }
-    h1 { font-size: 1.8rem; margin: 0 0 6px; letter-spacing: -0.02em; }
-    h2 { font-size: 1rem; margin: 0 0 10px; }
+    h1, h2, .wordmark, .hero-card h3 {
+      font-family: "Fraunces", Georgia, serif;
+      font-weight: 640;
+      letter-spacing: -0.03em;
+    }
     p { margin: 0; }
-    .lede { max-width: 68ch; color: var(--muted); }
-    .limit {
-      margin-top: 14px;
-      padding: 10px 12px;
-      border: 1px solid var(--line);
+    button, a.btn {
+      font: inherit;
+      cursor: pointer;
+    }
+    .topbar, .hero, .why, .workspace, .footnote {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 22px 0 8px;
+      position: relative;
+      z-index: 2;
+    }
+    .wordmark {
+      font-size: 1.35rem;
+      color: var(--ink);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .wordmark::after {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 18px;
+      text-decoration: none;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .btn.primary {
+      background: var(--accent);
+      color: var(--accent-ink);
+    }
+    .btn.ghost {
+      background: transparent;
+      color: #6b1d36;
+      border: 1px solid #e8c5ce;
+    }
+    .btn.secondary {
       background: var(--card);
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+    .btn:disabled { opacity: 0.55; cursor: wait; }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 36px;
+      align-items: center;
+      padding: 28px 0 12px;
+      position: relative;
+    }
+    .eyebrow {
+      color: var(--muted);
+      font-size: 0.86rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    h1 {
+      font-size: clamp(2.2rem, 4.4vw, 3.4rem);
+      line-height: 1.08;
+      margin: 0 0 14px;
+    }
+    .lede { color: var(--muted); max-width: 58ch; }
+    .upload-card {
+      margin-top: 22px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+    .file-field, .text-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 180px;
+      flex: 1;
+    }
+    .file-field span, .text-field span, label > span {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .file-field input, .text-field input, textarea {
+      font: inherit;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px 12px;
+    }
+    .file-field input[type="file"]::file-selector-button {
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border: 0;
+      border-radius: 999px;
+      padding: 8px 12px;
+      margin-right: 10px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      cursor: pointer;
+    }
+    .text-field input { width: 100%; }
+    textarea { width: 100%; min-height: 96px; resize: vertical; }
+    .status { min-height: 1.3em; color: var(--danger); font-size: 0.92rem; }
+    .progress {
       color: var(--muted);
       font-size: 0.92rem;
     }
-    form, .workspace { margin-top: 18px; }
-    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
-    label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
-    input[type="file"], input[type="text"], textarea {
-      font: inherit;
+    .working {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .working.hidden { display: none; }
+    .pulse {
+      width: 120px;
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent-soft), var(--blush), var(--accent-soft));
+      background-size: 200% 100%;
+      animation: sweep 1.2s linear infinite;
+    }
+    @keyframes sweep {
+      from { background-position: 100% 0; }
+      to { background-position: -100% 0; }
+    }
+    .hero-art {
+      position: relative;
+      min-height: 360px;
+    }
+    .blob {
+      position: absolute;
+      pointer-events: none;
+      filter: blur(2px);
+    }
+    .blob-a {
+      width: 210px;
+      height: 170px;
+      right: 8%;
+      top: 8%;
+      background: var(--peach);
+      border-radius: 48% 52% 60% 40% / 40% 48% 52% 60%;
+    }
+    .blob-b {
+      width: 150px;
+      height: 150px;
+      right: -2%;
+      top: 38%;
+      background: var(--rose);
+      border-radius: 60% 40% 48% 52%;
+    }
+    .blob-c {
+      width: 120px;
+      height: 130px;
+      right: 36%;
+      top: 0;
+      background: var(--gold);
+      border-radius: 40% 60% 42% 58%;
+    }
+    .preview {
+      position: relative;
+      z-index: 1;
+      margin: 28px 18px 0 auto;
+      width: min(100%, 420px);
+      background: #6b1d36;
+      color: #fff;
+      border-radius: 26px;
+      padding: 16px 16px 18px;
+      box-shadow: var(--shadow);
+    }
+    .preview-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.78rem;
+      opacity: 0.85;
+      margin-bottom: 12px;
+    }
+    .preview video, .preview .screen {
+      width: 100%;
+      border-radius: 16px;
+      background: #3a1020;
+      aspect-ratio: 16 / 9;
+      display: grid;
+      place-items: center;
+      color: #f7d7c8;
+      font-size: 0.9rem;
+    }
+    .preview-list {
+      margin-top: 12px;
+      display: grid;
+      gap: 8px;
+    }
+    .preview-row {
+      background: rgba(255,255,255,0.12);
+      border-radius: 12px;
+      padding: 8px 10px;
+      font-size: 0.84rem;
+    }
+    .preview-row.hot {
+      background: #fde6c8;
       color: var(--ink);
+    }
+    .why { padding: 28px 0 8px; }
+    .why h2 {
+      text-align: center;
+      font-size: clamp(1.6rem, 3vw, 2.1rem);
+      margin: 0 0 22px;
+    }
+    .why-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 18px;
+    }
+    .why-card {
+      text-align: center;
+      padding: 8px 8px 0;
+    }
+    .why-icon {
+      width: 76px;
+      height: 76px;
+      margin: 0 auto 12px;
+      border-radius: 22px;
+      display: grid;
+      place-items: center;
+      font-family: "Fraunces", serif;
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+    .why-card h3 {
+      font-family: "Fraunces", serif;
+      font-size: 1.05rem;
+      margin: 0 0 6px;
+    }
+    .why-card p { color: var(--muted); font-size: 0.92rem; }
+    .icon-number { background: #fbe3d4; color: #9a3f24; }
+    .icon-not { background: #f7d5e0; color: #6b1d36; }
+    .icon-term { background: var(--accent-soft); color: var(--accent); }
+    .icon-miss { background: #f3e6c8; color: #8a5a12; }
+    .footnote {
+      margin: 18px auto 8px;
+      padding: 12px 16px;
+      border-radius: 16px;
       background: var(--card);
       border: 1px solid var(--line);
-      padding: 8px;
+      color: var(--muted);
+      font-size: 0.92rem;
     }
-    input[type="text"], textarea { width: 100%; }
-    textarea { min-height: 88px; resize: vertical; }
-    button {
-      font: inherit;
-      background: var(--accent);
-      color: var(--accent-ink);
-      border: 0;
-      padding: 9px 14px;
-      cursor: pointer;
+    .workspace { padding: 12px 0 48px; }
+    .workspace.hidden, .hidden { display: none; }
+    .pack {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px 16px;
+      align-items: start;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow);
     }
-    button.secondary, a.secondary {
-      background: transparent;
+    .pack h2 { margin: 0 0 4px; font-size: 1.35rem; }
+    .pack .stats { grid-column: 1 / -1; }
+    .stats { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      background: var(--accent-soft);
       color: var(--accent);
-      border: 1px solid var(--accent);
-      text-decoration: none;
-      display: inline-block;
-      padding: 9px 14px;
     }
-    button:disabled { opacity: 0.55; cursor: wait; }
-    .status { min-height: 1.4em; margin-top: 10px; color: var(--danger); }
+    .chip.kind-number { background: #fbe3d4; color: #9a3f24; }
+    .chip.kind-negation { background: #f7d5e0; color: #6b1d36; }
+    .chip.kind-glossary { background: var(--accent-soft); color: var(--accent); }
+    .chip.kind-missing { background: #f3e6c8; color: #8a5a12; }
     .layout { display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 16px; }
-    video { width: 100%; background: #111; aspect-ratio: 16 / 9; }
-    .panel { background: var(--card); border: 1px solid var(--line); padding: 12px; }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+    .panel h2 { font-size: 1.2rem; margin: 0 0 12px; }
+    video {
+      width: 100%;
+      background: #1a1210;
+      aspect-ratio: 16 / 9;
+      border-radius: 16px;
+    }
     .cues { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow: auto; }
     .cues button {
       display: block;
@@ -80,102 +372,197 @@
       background: transparent;
       color: var(--ink);
       border: 0;
+      border-radius: 12px;
       border-left: 4px solid transparent;
-      padding: 8px;
+      padding: 10px;
     }
     .cues button.flagged { background: var(--mark); border-left-color: var(--danger); }
     .cues button.active { outline: 2px solid var(--accent); }
     .time { font-variant-numeric: tabular-nums; color: var(--muted); margin-right: 8px; }
-    table { width: 100%; border-collapse: collapse; background: var(--card); }
-    th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 0.92rem; }
-    th { font-size: 0.78rem; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 0.92rem; }
+    th {
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
     tr.selected { background: var(--mark); }
-    td button { background: transparent; color: var(--accent); border: 0; padding: 0; text-decoration: underline; }
-    .editor { display: flex; flex-direction: column; gap: 8px; }
+    td button {
+      background: transparent;
+      color: var(--accent);
+      border: 0;
+      padding: 0;
+      text-decoration: underline;
+      font-weight: 700;
+    }
+    .issue-cell { display: grid; gap: 6px; }
+    .editor { display: flex; flex-direction: column; gap: 10px; }
     .evidence { font-size: 0.92rem; }
-    .evidence span { display: block; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; }
-    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-    .downloads { display: flex; gap: 8px; margin-top: 12px; }
-    .hidden { display: none; }
-    @media (max-width: 800px) {
-      .layout { grid-template-columns: 1fr; }
+    .evidence span { display: block; }
+    .evidence span:first-child {
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+    .actions, .downloads { display: flex; flex-wrap: wrap; gap: 8px; }
+    .actions { padding-bottom: 4px; }
+    .downloads { margin-top: 2px; }
+    @media (max-width: 900px) {
+      .hero, .layout, .why-grid, .pack { grid-template-columns: 1fr; }
+      .hero-art { min-height: 280px; }
+      .preview { margin: 0 auto; }
+      .file-field { min-width: 100%; }
     }
   </style>
 </head>
 <body>
-  <header>
-    <h1>CaptionCheck</h1>
-    <p class="lede">CaptionCheck lists the few caption moments in a short English lesson that might change a number, a negation, or a required term, or where speech has no caption, so the creator can listen and export a corrected SRT.</p>
-    <p class="limit" id="limit">If the second transcript hears the same wrong word as the caption, that line will not appear. Every row is a possible issue.</p>
+  <header class="topbar">
+    <a class="wordmark" href="/">CaptionCheck</a>
+    <button type="button" class="btn ghost" id="demo">Open a real chemistry lesson</button>
   </header>
-  <main>
-    <form id="upload">
-      <div class="row">
-        <label>Video (MP4 or WebM)<input name="video" type="file" accept="video/mp4,video/webm,.mp4,.webm,.mov,.mkv" required></label>
-        <label>Captions (SRT)<input name="srt" type="file" accept=".srt,text/plain" required></label>
-        <label>Glossary, optional<input name="glossary" type="text" placeholder="mitosis, surface tension"></label>
-        <button type="submit">Check captions</button>
-        <button type="button" class="secondary" id="demo">Open planted sample</button>
-      </div>
-      <p class="status" id="status" role="status"></p>
-      <p class="lede" id="progress" style="margin-top:8px;"></p>
-    </form>
 
-    <section id="workspace" class="workspace hidden">
-      <div class="layout">
-        <div class="panel">
-          <h2>Video</h2>
-          <video id="player" controls preload="metadata"></video>
+  <section class="hero">
+    <div>
+      <p class="eyebrow">For teachers and trainers with a short English lesson</p>
+      <h1>Caption moments that might change the lesson.</h1>
+      <p class="lede">CaptionCheck lists the few caption moments in a short English lesson that might change a number, a negation, or a required term, or where speech has no caption, so the creator can listen and export a corrected SRT.</p>
+      <form id="upload" class="upload-card">
+        <div class="row">
+          <label class="file-field">
+            <span>Video (MP4 or WebM)</span>
+            <input name="video" type="file" accept="video/mp4,video/webm,.mp4,.webm,.mov,.mkv" required>
+          </label>
+          <label class="file-field">
+            <span>Captions (SRT)</span>
+            <input name="srt" type="file" accept=".srt,text/plain" required>
+          </label>
         </div>
-        <div class="panel">
-          <h2>Captions</h2>
-          <ul class="cues" id="cues"></ul>
+        <label class="text-field">
+          <span>Glossary, optional</span>
+          <input name="glossary" type="text" placeholder="molarity, copper chloride">
+        </label>
+        <div class="row">
+          <button type="submit" class="btn primary">Check captions</button>
+        </div>
+        <p class="status" id="status" role="status"></p>
+        <div class="working hidden" id="working">
+          <div class="pulse" aria-hidden="true"></div>
+          <p class="progress" id="progress"></p>
+        </div>
+      </form>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <div class="blob blob-a"></div>
+      <div class="blob blob-b"></div>
+      <div class="blob blob-c"></div>
+      <div class="preview">
+        <div class="preview-top"><span>Lesson review</span><span>3 possible issues</span></div>
+        <div class="screen">Video + captions stay together</div>
+        <div class="preview-list">
+          <div class="preview-row hot">00:05 · Caption says 0.5, audio may say 0.05</div>
+          <div class="preview-row">00:12 · Missing “not”</div>
+          <div class="preview-row">00:21 · Required term off-screen</div>
         </div>
       </div>
+    </div>
+  </section>
 
-      <div class="layout" style="margin-top: 16px;">
-        <div class="panel">
-          <h2>Possible issues</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Possible issue</th>
-                <th>Why it matters</th>
-                <th>Recognizer score</th>
-              </tr>
-            </thead>
-            <tbody id="queue"></tbody>
-          </table>
-          <p id="empty" class="lede hidden">No possible issues in these four categories.</p>
-        </div>
-        <div class="panel editor" id="editor">
-          <h2>Review</h2>
-          <p class="lede" id="editor-empty">Select a row to play it and edit the caption.</p>
-          <div id="editor-body" class="hidden">
-            <p class="evidence"><span>Why it matters</span><span id="why-label"></span></p>
-            <p class="evidence"><span>Caption</span><span id="cap-label"></span></p>
-            <p class="evidence"><span>Audio transcript</span><span id="audio-label"></span></p>
-            <p class="evidence"><span>Recognizer score</span><span id="score-label"></span></p>
-            <p class="lede" id="score-note">This score is how sure the second transcript is of its own words. A high score can still sit on the wrong caption.</p>
-            <label>Working caption<textarea id="caption-edit"></textarea></label>
-            <div class="actions">
-              <button type="button" id="play">Play</button>
-              <button type="button" id="apply">Apply</button>
-              <button type="button" class="secondary" id="dismiss">Dismiss</button>
-            </div>
+  <section class="why">
+    <h2>What gets flagged</h2>
+    <div class="why-grid">
+      <article class="why-card">
+        <div class="why-icon icon-number">0.05</div>
+        <h3>Numbers</h3>
+        <p>A dose, date, or measurement that could change what a student does.</p>
+      </article>
+      <article class="why-card">
+        <div class="why-icon icon-not">not</div>
+        <h3>Negation</h3>
+        <p>A dropped or extra “not” that can reverse the instruction.</p>
+      </article>
+      <article class="why-card">
+        <div class="why-icon icon-term">Aa</div>
+        <h3>Required terms</h3>
+        <p>Glossary words the lesson asked you to keep exact.</p>
+      </article>
+      <article class="why-card">
+        <div class="why-icon icon-miss">—</div>
+        <h3>Missing speech</h3>
+        <p>Spoken words in a stretch that has no caption at all.</p>
+      </article>
+    </div>
+  </section>
+
+  <p class="footnote" id="limit">If the second transcript hears the same wrong word as the caption, that line will not appear. Every row is a possible issue.</p>
+
+  <section id="workspace" class="workspace hidden">
+    <div class="pack">
+      <div>
+        <h2>This lesson</h2>
+        <p class="lede" id="pack-copy">Video, captions, and remaining flags stay in one review.</p>
+      </div>
+      <div class="stats" id="pack-stats"></div>
+      <div class="downloads">
+        <a class="btn secondary" id="original-link">Download original</a>
+        <a class="btn secondary" id="reviewed-link">Download reviewed</a>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="panel">
+        <h2>Video</h2>
+        <video id="player" controls preload="metadata"></video>
+      </div>
+      <div class="panel">
+        <h2>Captions</h2>
+        <ul class="cues" id="cues"></ul>
+      </div>
+    </div>
+
+    <div class="layout" style="margin-top: 16px;">
+      <div class="panel">
+        <h2>Possible issues</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Possible issue</th>
+              <th>Why it matters</th>
+              <th>Recognizer score</th>
+            </tr>
+          </thead>
+          <tbody id="queue"></tbody>
+        </table>
+        <p id="empty" class="lede hidden">No possible issues in these four categories.</p>
+      </div>
+      <div class="panel editor" id="editor">
+        <h2>Review</h2>
+        <p class="lede" id="editor-empty">Select a row to play it and edit the caption.</p>
+        <div id="editor-body" class="hidden">
+          <p class="evidence"><span>Why it matters</span><span id="why-label"></span></p>
+          <p class="evidence"><span>Caption</span><span id="cap-label"></span></p>
+          <p class="evidence"><span>Audio transcript</span><span id="audio-label"></span></p>
+          <p class="evidence"><span>Recognizer score</span><span id="score-label"></span></p>
+          <p class="lede" id="score-note">This score is how sure the second transcript is of its own words. A high score can still sit on the wrong caption.</p>
+          <label><span>Working caption</span><textarea id="caption-edit"></textarea></label>
+          <div class="actions">
+            <button type="button" class="btn primary" id="play">Play</button>
+            <button type="button" class="btn primary" id="apply">Apply</button>
+            <button type="button" class="btn ghost" id="dismiss">Dismiss</button>
           </div>
         </div>
       </div>
-      <div class="downloads">
-        <a class="secondary" id="original-link">Download original</a>
-        <a class="secondary" id="reviewed-link">Download reviewed</a>
-      </div>
-    </section>
-  </main>
+    </div>
+  </section>
+
   <script>
     const statusEl = document.querySelector("#status");
     const progressEl = document.querySelector("#progress");
+    const workingEl = document.querySelector("#working");
     const workspace = document.querySelector("#workspace");
     const player = document.querySelector("#player");
     const cuesEl = document.querySelector("#cues");
@@ -183,9 +570,18 @@
     const emptyEl = document.querySelector("#empty");
     const editorEmpty = document.querySelector("#editor-empty");
     const editorBody = document.querySelector("#editor-body");
+    const packCopy = document.querySelector("#pack-copy");
+    const packStats = document.querySelector("#pack-stats");
+    const KIND_LABELS = {
+      number: "Number",
+      negation: "Negation",
+      glossary: "Required term",
+      missing: "Missing caption"
+    };
     let state = null;
     let selectedFlagId = null;
     let selectedCueId = null;
+    let lessonLabel = "Uploaded lesson";
 
     function clock(seconds) {
       const whole = Math.max(0, Math.floor(seconds));
@@ -206,6 +602,13 @@
 
     function selectedFlag() {
       return (state && state.flags || []).find((flag) => flag.id === selectedFlagId) || null;
+    }
+
+    function setWorking(message, options) {
+      const on = Boolean(message);
+      workingEl.classList.toggle("hidden", !on);
+      progressEl.textContent = message || "";
+      workingEl.querySelector(".pulse").style.display = options && options.steady ? "none" : "";
     }
 
     function renderEditor() {
@@ -233,21 +636,53 @@
       document.querySelector("#apply").textContent = flag && flag.cueId == null ? "Add cue" : "Apply";
     }
 
+    function renderPack() {
+      const flags = state.flags || [];
+      const cues = state.cues || [];
+      packCopy.textContent = lessonLabel + " keeps its video, captions, and remaining flags in this review.";
+      packStats.replaceChildren();
+      const items = [
+        flags.length + " possible issue" + (flags.length === 1 ? "" : "s"),
+        cues.length + " caption" + (cues.length === 1 ? "" : "s")
+      ];
+      const kinds = {};
+      for (const flag of flags) kinds[flag.kind] = (kinds[flag.kind] || 0) + 1;
+      for (const kind of Object.keys(KIND_LABELS)) {
+        if (kinds[kind]) items.push(kinds[kind] + " " + KIND_LABELS[kind].toLowerCase());
+      }
+      for (const item of items) {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = item;
+        packStats.append(chip);
+      }
+    }
+
     function render() {
-      if (state.status && state.status !== "ready") {
+      const reviewing = state && state.status === "ready";
+      document.querySelector(".hero").classList.toggle("hidden", reviewing);
+      document.querySelector(".why").classList.toggle("hidden", reviewing);
+      if (state.status === "processing" || state.status === "error") {
         workspace.classList.add("hidden");
-        progressEl.textContent = state.progress || "Working…";
+        setWorking(state.progress || "Working…");
         return;
       }
       workspace.classList.remove("hidden");
-      progressEl.textContent = state.trimmed
-        ? "Video was longer than the limit, so only the first " + Math.round(state.maxSeconds) + " seconds were checked."
-        : "";
+      if (state.trimmed) {
+        setWorking(
+          "Video was longer than the limit, so only the first " + Math.round(state.maxSeconds) + " seconds were checked.",
+          { steady: true }
+        );
+      } else {
+        setWorking("");
+      }
       document.querySelector("#limit").textContent = state.limit;
       if (player.dataset.session !== state.id) {
         player.dataset.session = state.id;
         player.src = state.videoUrl;
+        workspace.scrollIntoView({ behavior: "auto", block: "start" });
       }
+      renderPack();
       cuesEl.replaceChildren();
       for (const cue of state.cues || []) {
         const item = document.createElement("li");
@@ -278,8 +713,21 @@
         open.textContent = clock(flag.start);
         open.addEventListener("click", () => openFlag(flag));
         timeCell.append(open);
-        row.append(timeCell);
-        for (const value of [flag.possibleIssue, flag.why, flag.score == null ? "—" : Number(flag.score).toFixed(2)]) {
+        const issueCell = document.createElement("td");
+        const wrap = document.createElement("div");
+        wrap.className = "issue-cell";
+        if (flag.kind) {
+          const chip = document.createElement("span");
+          chip.className = "chip kind-" + flag.kind;
+          chip.textContent = KIND_LABELS[flag.kind] || flag.kind;
+          wrap.append(chip);
+        }
+        const issue = document.createElement("div");
+        issue.textContent = flag.possibleIssue;
+        wrap.append(issue);
+        issueCell.append(wrap);
+        row.append(timeCell, issueCell);
+        for (const value of [flag.why, flag.score == null ? "—" : Number(flag.score).toFixed(2)]) {
           const cell = document.createElement("td");
           cell.textContent = value;
           row.append(cell);
@@ -299,6 +747,22 @@
       return payload;
     }
 
+    function isReady(payload) {
+      return payload.status === "ready" || (payload.status !== "processing" && payload.status !== "error" && Array.isArray(payload.flags));
+    }
+
+    function sessionFromUrl() {
+      return new URLSearchParams(location.search).get("session");
+    }
+
+    function rememberSession(id) {
+      if (!id) return;
+      const url = new URL(location.href);
+      if (url.searchParams.get("session") === id) return;
+      url.searchParams.set("session", id);
+      history.replaceState(null, "", url);
+    }
+
     async function useState(next) {
       const previousFlag = selectedFlagId;
       state = next;
@@ -306,6 +770,7 @@
         selectedFlagId = null;
       }
       statusEl.textContent = state.error || "";
+      if (state && state.id && state.status === "ready") rememberSession(state.id);
       render();
     }
 
@@ -313,16 +778,16 @@
       for (;;) {
         const next = await send("/api/sessions/" + sessionId);
         await useState(next);
-        if (next.status === "ready") return next;
         if (next.status === "error") throw new Error(next.error || "Processing failed");
-        progressEl.textContent = next.progress || "Working…";
+        if (isReady(next)) return next;
+        setWorking(next.progress || "Working…");
         await new Promise((resolve) => setTimeout(resolve, 800));
       }
     }
 
     async function startSession(url, options) {
       const started = await send(url, options);
-      if (started.status === "ready") {
+      if (isReady(started)) {
         await useState(started);
         return started;
       }
@@ -335,12 +800,13 @@
       const button = event.target.querySelector("button[type=submit]");
       button.disabled = true;
       statusEl.textContent = "";
-      progressEl.textContent = "Uploading…";
+      lessonLabel = (event.target.video.files[0] && event.target.video.files[0].name) || "Uploaded lesson";
+      setWorking("Uploading…");
       try {
         await startSession("/api/sessions", { method: "POST", body: new FormData(event.target) });
       } catch (error) {
         statusEl.textContent = error.message;
-        progressEl.textContent = "";
+        setWorking("");
       } finally {
         button.disabled = false;
       }
@@ -348,12 +814,13 @@
 
     document.querySelector("#demo").addEventListener("click", async () => {
       statusEl.textContent = "";
-      progressEl.textContent = "Loading the planted sample…";
+      lessonLabel = "Chemistry lesson";
+      setWorking("Loading a real chemistry lesson…");
       try {
         await startSession("/api/sessions/demo", { method: "POST" });
       } catch (error) {
         statusEl.textContent = error.message;
-        progressEl.textContent = "";
+        setWorking("");
       }
     });
 
@@ -398,6 +865,16 @@
         statusEl.textContent = error.message;
       }
     });
+
+    const existingSession = sessionFromUrl();
+    if (existingSession) {
+      lessonLabel = "Chemistry lesson";
+      setWorking("Opening this lesson…");
+      waitUntilReady(existingSession).catch((error) => {
+        statusEl.textContent = error.message;
+        setWorking("");
+      });
+    }
   </script>
 </body>
 </html>
